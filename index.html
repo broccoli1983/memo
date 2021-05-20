@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css" media="print" onload="this.media='all'">
+    <title>kakeibo</title>
+
+<body>
+    <div class="wrap">
+        <div class="content">
+            <p><b>年月：<span id="target_month"></span></b></p>
+            <p>
+                <!-- 入力欄：いつ、どこで、何を、いくらで購入したか -->
+                <!-- ★ 前月へ遷移-->
+                <a id="get_before_month" href="javascript:void(0);">＜＜前月</a>
+                <input type="text" id="product_store" placeholder="店舗">
+                <input type="text" id="product_category" placeholder="分類">
+                <input type="text" id="product_name" placeholder="商品">
+                <input type="number" id="product_price" placeholder="価格">
+                <input type="button" id="add" value="追加">
+                <input type="button" id="clear" value="クリア">
+                <!-- ★ 翌月へ遷移-->
+                <a id="get_next_month" href="javascript:void(0);">翌月＞＞</a>
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th width="20%">日付</th>
+                        <th width="15%">店舗</th>
+                        <th width="15%">分類</th>
+                        <th width="25%">商品</th>
+                        <th width="15%">価格</th>
+                        <th width="10%"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+            <div>
+                <b>
+                    <p class="sum_price">合計：0円</p>
+                </b>
+            </div>
+        </div>
+        <!-- 円グラフ -->
+        <div class="chart">
+            <section class="container-fluid bg-dark" id="skill">
+                <!-- グラフのタイトル -->
+                <h3 class="text-white text-center display-4">今月の支出 CATEGORY</h3>
+                <div class="skill-contents text-white p-lg-5">
+                    <canvas id="my_chart">
+                        Canvas not supported...
+                    </canvas>
+                </div>
+            </section>
+            <section class="container-fluid bg-dark" id="skill">
+                <!-- グラフのタイトル -->
+                <h3 class="text-white text-center display-4">今月の支出 STORE</h3>
+                <div class="skill-contents text-white p-lg-5">
+                    <canvas id="my_chart3">
+                        Canvas not supported...
+                    </canvas>
+                </div>
+            </section>
+            <section class="container-fluid bg-dark" id="skill">
+                <!-- グラフのタイトル -->
+                <h3 class="text-white text-center display-4">月別の支出</h3>
+                <div class="skill-contents text-white p-lg-5">
+                    <!-- Canvas非対応時に表示 -->
+                    <canvas id="my_chart2">
+                        Canvas not supported...
+                    </canvas>
+                </div>
+            </section>
+        </div>
+    </div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- Chart.js 導入 -->
+    <!-- 末尾.jsは必須、cssだと動かない -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js"></script>
+    <script>
+        var store = $("#product_store").val();
+        var category = $("#product_category").val();
+        var name = $("#product_name").val();
+        var price = $("#product_price").val();
+        // ★年月取得
+        var date = new Date();
+        var str_date = date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
+        var str_yyyymm = date.getFullYear() + '/' + (date.getMonth() + 1);
+        $(function () {
+            // 表示対象の年月を取得
+            var now_date = new Date();
+            // getFullYear=dateのYYYY取得
+            var now_month = now_date.getFullYear() + '/' + (now_date.getMonth() + 1);
+            $("#target_month").append(now_month);
+            // ローカルストレージから表を作成
+            bulidTable();
+            // 画面表示時に価格の合計値を計算
+            sum();
+            // 挿入した行のボタンイベントをイベントハンドラへ登録する
+            createDeleteEvent();
+            // ★前月翌月へ遷移
+            /********************
+            共通関数
+            ********************/
+            function removeLocalStorage(name) {
+                if (isBlank(name)) {
+                    alert("error!!");
+                    return false;
+                }
+                // ローカルストレージから削除
+                localStorage.removeItem(name);
+            }
+
+            function removeLocalStorageAll() {
+                // ★ローカルストレージをすべてクリア
+                localStorage.clear();
+            }
+
+            function getLocalstorageItem(name) {
+                if (isBlank(name)) retun;
+                return localStorage.getItem(name);
+            }
+
+            function saveLocalstorage(store, category, name, data) {
+                // ||=or
+                if (isBlank(store) || isBlank(category) || isBlank(name) || isBlank(data)) {
+                    alert("error!!");
+                    return false;
+                }
+
+                // ローカルストレージに新規保存or上書き
+                localStorage.setItem(store, category, name, data);
+                return true;
+            }
+
+            //ローカルストレージ名生成
+            function getLocalStorageName(ym = '') {
+                var base_name = '_kakeibo';
+                if (isBlank(ym)) {
+                    var target_month = $("#target_month").text();
+                    ym = target_month.replace(/\//g, "");
+                }
+                return ym + base_name;
+            }
+
+            // テーブルを自動生成する
+            function bulidTable() {
+                var tableBody = "";
+                // テーブルを初期化
+                $("table tbody tr").remove();
+
+                // ローカルストレージ名取得
+                var localstorage_name = getLocalStorageName();
+                var localSt = getLocalstorageItem(localstorage_name);
+                // ローカルストレージのデータ取得
+                // JSON形式から連想配列に変換
+                var localStJSON = JSON.parse(localSt);
+
+                $(localStJSON).map(function (index, line) {
+                    tableBody += "<tr>";
+                    tableBody += "<td>" + line["date"] + "</td>";
+                    tableBody += "<td class='store'>" + line["store"] + "</td>";
+                    tableBody += "<td class='category'>" + line["category"] + "</td>";
+                    tableBody += "<td class='name'>" + line["name"] + "</td>";
+                    tableBody += "<td class='price'>" + line["price"] + "</td>";
+                    tableBody += '<td><input type="button" class="delete" value="削除"></td>';
+                    tableBody += "</tr>";
+                });
+                // テーブルを生成
+                $('table tbody').append(tableBody);
+            }
+
+            // 空欄チェック
+            function isBlank(data) {
+                // Erre data.length undefinedが発生するので空欄の時のみでOK
+                // if (data.length == 0 || data == '') {
+                if (data == '') {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+
+            // 合計値を求める
+            function sum() {
+                // 表の金額を取得する(tdの奇数列を取得)
+                var pricelist = $("table td[class=price]").map(function (index, val) {
+                    var price = parseInt($(val).text());
+                    if (price >= 0) {
+                        //console.log(price);//ここでは数値
+                        return price;
+                    } else {
+                        return null;
+                    }
+                });
+                // 価格の合計を求める
+                var total = 0;
+                pricelist.each(function (index, val) {
+                    total = total + val;
+                });
+                $(".sum_price").text("合計：" + total + "円");
+            }
+
+            // テーブル情報を読み込みJSON形式変換して返す
+            function getJsonFromTable() {
+                var counter = 0;
+                var line = [];
+                $("table tbody tr").map(function (index, val) {
+                    line[counter] = {
+                        "date": $(val).children().eq(0).text()
+                        , "store": $(val).children().eq(1).text()
+                        , "category": $(val).children().eq(2).text()
+                        , "name": $(val).children().eq(3).text()
+                        , "price": $(val).children().eq(4).text()
+                    };
+                    counter += 1;
+                });
+                return line;
+            }
+
+            function createDeleteEvent() {
+                $(document).on("click", ".delete", function (event) {
+                    var target = $(event.target);
+                    target.parents("tr").remove();
+                    // 合計値を再計算
+                    sum();
+                    var line = getJsonFromTable();
+                    // 連想配列からJSON形式に変換
+                    var mainJSON = JSON.stringify(line);
+                    //ローカルストレージに保存
+                    saveLocalstorage(getLocalStorageName(), mainJSON);
+                });
+            }
+
+            /********************
+            各種イベント処理
+            ********************/
+            // 前月リンク押下時の処理
+            $("#get_before_month").click(function () {
+                var target_month_str = $("#target_month").text();
+                var target_month_array = target_month_str.split("/");
+                var last_date = new Date(target_month_array[0], target_month_array[1] - 2, 1);
+                var last_month = last_date.getFullYear() + '/' + (last_date.getMonth() + 1);
+                var last_ym = last_date.getFullYear().toString() + (last_date.getMonth() + 1).toString();
+                $("#target_month").text(last_month);
+                // テーブルフォームの再作成
+                bulidTable();
+                // 合計金額の再計算
+                sum();
+                // 挿入した行のボタンイベントをイベントハンドラへ登録する
+                createDeleteEvent();
+            });
+
+            // 翌月リンク押下時の処理
+            $("#get_next_month").click(function () {
+                var target_month_str = $("#target_month").text();
+                var target_month_array = target_month_str.split("/");
+                var next_date = new Date(target_month_array[0], target_month_array[1], 1);
+                var next_month = next_date.getFullYear() + '/' + (next_date.getMonth() + 1);
+                var next_ym = next_date.getFullYear().toString() + (next_date.getMonth() + 1).toString();
+                $("#target_month").text(next_month);
+                // テーブルフォームの再作成
+                bulidTable();
+                // 合計金額の再計算
+                sum();
+                createDeleteEvent();
+            });
+
+            // addボタン押下時の処理
+            $("#add").click(function () {
+                var store = $("#product_store").val();
+                var category = $("#product_category").val();
+                var name = $("#product_name").val();
+                var price = $("#product_price").val();
+                var date = new Date();
+                var str_date = date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
+
+                // 空欄チェック
+                if (isBlank(store) || isBlank(category) || isBlank(name) || isBlank(price)) {
+                    alert('空欄の項目があります。');
+                    return;
+                }
+
+                // 数値チェック
+                if (!$.isNumeric(price)) {
+                    alert('価格は数値で入力してください。');
+                    return;
+                }
+
+                // 行を追加
+                $('table').append('<tr><td>' + str_date + '</td>'
+                    + '<td class="store">' + store + '</td>'
+                    + '<td class="category">' + category + '</td>'
+                    + '<td class="name">' + name + '</td>'
+                    + '<td class="price">' + price + '</td>'
+                    + '<td><input type="button" class="delete" value="削除"></td>'
+                    + '</tr>');
+
+                //ローカルストレージに保存
+
+                var product = { "date": str_date, "store": store, "category": category, "name": name, "price": price };
+                //既存のローカルストレージの値を取得
+                var mainArray = [];
+                var localStJSON = getLocalstorageItem(getLocalStorageName());
+                if (localStJSON != null && localStJSON != "") {
+                    // JSON形式から連想配列に変換
+                    var mainArray = JSON.parse(localStJSON);
+                }
+                mainArray.push(product);
+
+                // 連想配列からJSON形式に変換
+                // 連想系列=JavaScriptのオブジェクトそのもの,キーには文字列
+                var mainJSON = JSON.stringify(mainArray);
+                //ローカルストレージに保存
+                saveLocalstorage(getLocalStorageName(), mainJSON);
+
+                // 合計値を再計算//月次
+                sum();
+
+                // 挿入した行のボタンイベントをイベントハンドラへ登録する
+                createDeleteEvent();
+            });
+
+            // clearボタン押下時の処理
+            $("#clear").click(function () {
+                if (!confirm('当月分のデータを削除します。よろしいですか？')) {
+                    return false;
+                } else {
+                    removeLocalStorage(getLocalStorageName());
+                    $("table tbody tr").remove();
+                    sum();
+                }
+            });
+
+            // // Key取得用の名称作成
+            getYm = str_yyyymm.replace(/\//g, "");
+            thisName = '_kakeibo';
+            thisKakeiboYm = getYm + thisName;
+            // console.log(thisKakeiboYm);
+            // console.log = (thisKakeiboYm);
+            // // 当月グラフ用のデータ取得
+            if (localStorage.getItem(thisKakeiboYm)) {
+
+                const kakeiboData = localStorage.getItem(thisKakeiboYm);
+                const logData = JSON.parse(kakeiboData);
+
+
+                //groupByで分類単位に集計
+                const groupBy = logData.reduce((result, current) => {
+                    //分類あるか？
+                    const element = result.find(value => value.category === current.category);
+                    if (element) {
+                        //ある時（下記、初期データを操作）
+                        // element.count++;
+                        // element.isNumeric(price);
+                        element.price += current.price;
+                    } else {
+                        //無いとき（新規に初期データを作成）
+                        result.push({
+                            category: current.category,
+                            // count: 1,
+                            price: current.price,
+                        })
+                    }
+                    return result;
+
+                }, []); //初期値は[]
+
+                console.log(groupBy);
+            }
+            // category別当月支出グラフ
+            (function () {
+                "use strict";
+                // var type = 'bar';
+                // グラフの選択円はpie、折線はline、棒はbar
+                var type = "pie";
+                //グラフの項目 
+                var data = {
+                    labels: [
+                        "食費",
+                        "水光熱費",
+                        "日用品費",
+                        "子供費",
+                    ],
+                    datasets: [
+                        {
+                            label: "分類",
+                            // グラフのデータ
+                            // 集計結果の未反映
+                            data: [6411, 5687, 988, 1300],
+                            // グラフの項目ごとの色
+                            // 組み合わせでパステルカラー以外も可能
+                            backgroundColor: [
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(180, 60%, 60%, 0.3)",
+                                "hsla(270, 60%, 60%, 0.3)",
+                                "hsla(360, 60%, 60%, 0.3)",
+                            ],
+                            borderWidth: 0,
+                        },
+                    ],
+                };
+
+                var options = {
+                    scales: {
+                        xAxes: [
+                            {
+                                ticks: {
+                                    suggestedMin: 0,
+                                    suggestedMax: 100,
+                                    callback: function (value, index, values) {
+                                        return value + "%";
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                };
+
+                var ctx = document.getElementById("my_chart").getContext("2d");
+                var myChart = new Chart(ctx, {
+                    type: type,
+                    data: data,
+                    options: options,
+                });
+            })();
+            // store別当月支出グラフ
+            (function () {
+                "use strict";
+                // var type = 'bar';
+                // グラフの選択円はpie、折線はline、棒はbar
+                var type = "pie";
+                //グラフの項目 
+                var data = {
+                    labels: [
+                        "サニー",
+                        "西部ガス",
+                        "ツルハ",
+                        "保育園",
+                    ],
+                    datasets: [
+                        {
+                            label: "分類",
+                            // グラフのデータ
+                            // 集計結果の未反映
+                            data: [6411, 5687, 988, 1300],
+                            // グラフの項目ごとの色
+                            // 組み合わせでパステルカラー以外も可能
+                            backgroundColor: [
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(180, 60%, 60%, 0.3)",
+                                "hsla(270, 60%, 60%, 0.3)",
+                                "hsla(360, 60%, 60%, 0.3)",
+                            ],
+                            borderWidth: 0,
+                        },
+                    ],
+                };
+
+                var options = {
+                    scales: {
+                        xAxes: [
+                            {
+                                ticks: {
+                                    suggestedMin: 0,
+                                    suggestedMax: 100,
+                                    callback: function (value, index, values) {
+                                        return value + "%";
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                };
+
+                var ctx = document.getElementById("my_chart3").getContext("2d");
+                var myChart = new Chart(ctx, {
+                    type: type,
+                    data: data,
+                    options: options,
+                });
+            })();
+            // 月次支出推移グラフ
+            (function () {
+                "use strict";
+                // var type = 'bar';
+                // グラフの選択円はpie、折線はline、棒はbar
+                var type = "bar";
+                //グラフの項目 
+                var data2 = {
+                    labels: [
+                        "202012",
+                        "202101",
+                        "202102",
+                        "202103",
+                        "202104",
+                        "202105",
+                    ],
+                    datasets: [
+                        {
+                            label: "年月",
+                            // グラフのデータ
+                            data: [30302, 31458, 30302, 31458, 30207, 14386],
+                            // グラフの項目ごとの色
+                            // 組み合わせでパステルカラー以外も可能
+                            backgroundColor: [
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(90, 60%, 60%, 0.3)",
+                                "hsla(90, 60%, 60%, 0.3)",
+                                // "hsla(90, 60%, 60%, 0.3)",//黄緑
+                                // "hsla(180, 60%, 60%, 0.3)",//水色
+                                // "hsla(270, 60%, 60%, 0.3)",
+                                // "hsla(360, 60%, 60%, 0.3)",
+                            ],
+                            borderWidth: 0,
+                        },
+                    ],
+                };
+
+                var options = {
+                    scales: {
+                        xAxes: [
+                            {
+                                ticks: {
+                                    suggestedMin: 0,
+                                    suggestedMax: 100,
+                                    callback: function (value, index, values) {
+                                        // 棒グラフなので値＋％外す
+                                        return value;
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                };
+
+                var ctx = document.getElementById("my_chart2").getContext("2d");
+                var myChart = new Chart(ctx, {
+                    type: type,
+                    data: data2,
+                    options: options,
+                });
+            })();
+        });
+    </script>
+</body>
+
+</html>
